@@ -3,7 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strict Discipline Tracker + Export</title>
+    
+    <title>Discipline Tracker</title>
+    <meta name="title" content="Discipline Tracker">
+    <meta name="description" content="A strict habit tracker to build consistency. Track today or lose your streak.">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Discipline Tracker">
+    <meta property="og:description" content="Build streaks and visualize your year. Zero data leaves your device.">
+    <meta property="og:url" content="https://yourusername.github.io/your-repo/">
+
     <style>
         :root {
             --bg: #f1f5f9;
@@ -25,10 +34,11 @@
             --today-bg: rgba(79, 70, 229, 0.2);
             --locked-bg: #1e293b;
         }
-        body { margin: 0; font-family: system-ui; background: var(--bg); color: var(--text); padding: 2rem; display: flex; justify-content: center; }
+        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; display: flex; justify-content: center; }
         .container { width: 100%; max-width: 1100px; background: var(--card); padding: 2rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.1); }
         h1 { text-align: center; color: var(--primary); margin-bottom: 2rem; }
 
+        /* PROGRESS CIRCLES */
         .circle-container { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin-bottom: 2rem; }
         .circle-wrapper { width: 140px; height: 140px; position: relative; }
         svg { transform: rotate(-90deg); }
@@ -38,23 +48,28 @@
         .circle-text .percent { font-size: 1.4rem; font-weight: 800; }
         .circle-text .label { font-size: 0.7rem; opacity: 0.7; }
 
+        /* HABIT MANAGER */
         .habit-manager { display: flex; gap: 10px; margin-bottom: 1.5rem; justify-content: center; }
         .habit-manager input { padding: 10px; border-radius: 8px; border: 1px solid var(--border); width: 250px; background: var(--card); color: var(--text); }
         .add-btn { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
 
+        /* TABLE */
         .table-wrapper { overflow-x: auto; margin-bottom: 2rem; }
         table { width: 100%; border-collapse: collapse; min-width: 650px; }
         th, td { border: 1px solid var(--border); padding: 12px; text-align: center; }
         th { background: rgba(79, 70, 229, 0.05); }
-        
         .habit-name-cell { display: flex; align-items: center; gap: 10px; text-align: left; }
         .drag-handle { cursor: grab; color: #94a3b8; font-size: 20px; user-select: none; }
         .remove-habit { margin-left: auto; background: none; border: none; color: var(--fail); font-size: 18px; cursor: pointer; opacity: 0.3; }
         .remove-habit:hover { opacity: 1; }
-        
+        tr.dragging { opacity: 0.5; background: var(--today-bg); border: 2px dashed var(--primary); }
+
+        /* DISCIPLINE LOCKS */
         .is-today { background: var(--today-bg); outline: 2px solid var(--primary); outline-offset: -2px; z-index: 5; position: relative; }
         .locked-day { background: var(--locked-bg); opacity: 0.5; cursor: not-allowed !important; }
+        input:disabled { cursor: not-allowed; }
 
+        /* HEATMAP */
         #yearHeatmap { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 10px; border-top: 1px solid var(--border); padding-top: 1.5rem; }
         .week-column { display: flex; flex-direction: column; gap: 3px; }
         .day-square { width: 11px; height: 11px; border-radius: 2px; background: var(--border); position: relative; display: flex; align-items: center; justify-content: center; }
@@ -66,9 +81,9 @@
         .failed-day::after { content: '×'; color: var(--fail); font-size: 10px; font-weight: bold; }
 
         .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px; }
+        button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; cursor: pointer; }
         .btn-export { background: var(--export); color: white; border: none; }
         .streaks { display: flex; justify-content: center; gap: 2rem; margin: 1rem 0; font-weight: bold; }
-        button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -110,8 +125,8 @@
     </div>
 
     <div class="streaks">
-        <span>🔥 Current Streak: <span id="currentStreak" style="color:#f59e0b">0</span></span>
-        <span>🏆 Year Best: <span id="bestStreak" style="color:var(--primary)">0</span></span>
+        <span>🔥 Streak: <span id="currentStreak" style="color:#f59e0b">0</span></span>
+        <span>🏆 Best: <span id="bestStreak" style="color:var(--primary)">0</span></span>
     </div>
 
     <div id="yearHeatmap"></div>
@@ -220,7 +235,6 @@ function render() {
         row.addEventListener('dragover', handleDragOver);
         row.addEventListener('drop', handleDrop);
     });
-
     loadData();
 }
 
@@ -305,41 +319,21 @@ function drawHeatmap() {
 
 function exportToCSV() {
     const year = new Date().getFullYear();
-    let csvRows = [];
-    
-    // Header Row
-    const headers = ["Date", ...habits, "Completed Count", "Success %"];
-    csvRows.push(headers.join(","));
-
-    // Iterate through every day of the year up to today
+    let csvRows = ["Date," + habits.join(",") + ",Success %"];
     const today = new Date();
     for (let d = new Date(year, 0, 1); d <= today; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
         const data = JSON.parse(localStorage.getItem(getKey(d))) || [];
-        
-        const row = [dateStr];
-        let completed = 0;
-        
-        habits.forEach((_, hIdx) => {
-            const val = data[hIdx] ? "Yes" : "No";
-            if (data[hIdx]) completed++;
-            row.push(val);
-        });
-
-        const percent = habits.length ? Math.round((completed / habits.length) * 100) : 0;
-        row.push(completed, percent + "%");
+        let completed = data.filter(v => v).length;
+        let row = [d.toISOString().split('T')[0]];
+        habits.forEach((_, i) => row.push(data[i] ? "Yes" : "No"));
+        row.push(habits.length ? Math.round((completed/habits.length)*100)+"%" : "0%");
         csvRows.push(row.join(","));
     }
-
     const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.setAttribute('hidden', '');
-    a.setAttribute('href', url);
-    a.setAttribute('download', `HabitTracker_Export_${year}.csv`);
-    document.body.appendChild(a);
+    a.href = window.URL.createObjectURL(blob);
+    a.download = `Habits_${year}.csv`;
     a.click();
-    document.body.removeChild(a);
 }
 
 document.getElementById("weekSelector").onchange = render;
