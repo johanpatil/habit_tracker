@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strict Discipline Tracker + Export</title>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --text: #1e293b;
+            --primary: #4f46e5;
+            --accent: #22c55e;
+            --border: #e2e8f0;
+            --today-bg: rgba(79, 70, 229, 0.1);
+            --locked-bg: #f8fafc;
+            --fail: #ef4444;
+            --export: #0ea5e9;
+        }
+        .dark {
+            --bg: #0f172a;
+            --card: #020617;
+            --text: #e5e7eb;
+            --border: #1e293b;
+            --today-bg: rgba(79, 70, 229, 0.2);
+            --locked-bg: #1e293b;
+        }
+        body { margin: 0; font-family: system-ui; background: var(--bg); color: var(--text); padding: 2rem; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 1100px; background: var(--card); padding: 2rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.1); }
+        h1 { text-align: center; color: var(--primary); margin-bottom: 2rem; }
+
+        .circle-container { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin-bottom: 2rem; }
+        .circle-wrapper { width: 140px; height: 140px; position: relative; }
+        svg { transform: rotate(-90deg); }
+        .circle-bg { fill: none; stroke: var(--border); stroke-width: 10; }
+        .circle-progress { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; stroke-dasharray: 408; stroke-dashoffset: 408; transition: stroke-dashoffset 0.8s ease; }
+        .circle-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .circle-text .percent { font-size: 1.4rem; font-weight: 800; }
+        .circle-text .label { font-size: 0.7rem; opacity: 0.7; }
+
+        .habit-manager { display: flex; gap: 10px; margin-bottom: 1.5rem; justify-content: center; }
+        .habit-manager input { padding: 10px; border-radius: 8px; border: 1px solid var(--border); width: 250px; background: var(--card); color: var(--text); }
+        .add-btn { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+        .table-wrapper { overflow-x: auto; margin-bottom: 2rem; }
+        table { width: 100%; border-collapse: collapse; min-width: 650px; }
+        th, td { border: 1px solid var(--border); padding: 12px; text-align: center; }
+        th { background: rgba(79, 70, 229, 0.05); }
+        
+        .habit-name-cell { display: flex; align-items: center; gap: 10px; text-align: left; }
+        .drag-handle { cursor: grab; color: #94a3b8; font-size: 20px; user-select: none; }
+        .remove-habit { margin-left: auto; background: none; border: none; color: var(--fail); font-size: 18px; cursor: pointer; opacity: 0.3; }
+        .remove-habit:hover { opacity: 1; }
+        
+        .is-today { background: var(--today-bg); outline: 2px solid var(--primary); outline-offset: -2px; z-index: 5; position: relative; }
+        .locked-day { background: var(--locked-bg); opacity: 0.5; cursor: not-allowed !important; }
+
+        #yearHeatmap { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 10px; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+        .week-column { display: flex; flex-direction: column; gap: 3px; }
+        .day-square { width: 11px; height: 11px; border-radius: 2px; background: var(--border); position: relative; display: flex; align-items: center; justify-content: center; }
+        .level-1 { background: #dcfce7; }
+        .level-2 { background: #86efac; }
+        .level-3 { background: #22c55e; }
+        .level-4 { background: #166534; }
+        .failed-day { background: rgba(239, 68, 68, 0.1); }
+        .failed-day::after { content: '×'; color: var(--fail); font-size: 10px; font-weight: bold; }
+
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px; }
+        .btn-export { background: var(--export); color: white; border: none; }
+        .streaks { display: flex; justify-content: center; gap: 2rem; margin: 1rem 0; font-weight: bold; }
+        button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-weight: 600; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📅 Discipline Tracker</h1>
+
+    <div class="circle-container">
+        <div class="circle-wrapper">
+            <svg width="140" height="140"><circle class="circle-bg" cx="70" cy="70" r="65"/><circle id="yearCircle" class="circle-progress" cx="70" cy="70" r="65"/></svg>
+            <div class="circle-text"><div class="percent" id="yearPercent">0%</div><div class="label">Year</div></div>
+        </div>
+        <div class="circle-wrapper">
+            <svg width="140" height="140"><circle class="circle-bg" cx="70" cy="70" r="65"/><circle id="weekCircle" class="circle-progress" cx="70" cy="70" r="65"/></svg>
+            <div class="circle-text"><div class="percent" id="weekPercent">0%</div><div class="label">Week</div></div>
+        </div>
+    </div>
+
+    <div class="habit-manager">
+        <input type="text" id="habitInput" placeholder="Add a new goal...">
+        <button class="add-btn" onclick="addHabit()">Add</button>
+    </div>
+
+    <div class="controls">
+        <select id="weekSelector"></select>
+        <div style="display: flex; gap: 8px;">
+            <button onclick="toggleTheme()">🌓 Theme</button>
+            <button class="btn-export" onclick="exportToCSV()">📤 Export CSV</button>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th style="width: 250px;">Habit (Drag ⠿)</th><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th><th>S</th></tr>
+            </thead>
+            <tbody id="habit-body"></tbody>
+        </table>
+    </div>
+
+    <div class="streaks">
+        <span>🔥 Current Streak: <span id="currentStreak" style="color:#f59e0b">0</span></span>
+        <span>🏆 Year Best: <span id="bestStreak" style="color:var(--primary)">0</span></span>
+    </div>
+
+    <div id="yearHeatmap"></div>
+</div>
+
+<script>
+let habits = JSON.parse(localStorage.getItem("strict-habit-list")) || ["wake up 6am", "gym", "breakfast", "lunch", "dinner"];
+const CIRC = 2 * Math.PI * 65;
+
+const getKey = (date) => {
+    const d = new Date(date);
+    return `hbt-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+function toggleTheme() {
+    document.body.classList.toggle("dark");
+    localStorage.setItem("habit-theme", document.body.classList.contains("dark"));
+}
+if(localStorage.getItem("habit-theme") === "true") document.body.classList.add("dark");
+
+function addHabit() {
+    const input = document.getElementById("habitInput");
+    if(input.value.trim()) {
+        habits.push(input.value.trim());
+        localStorage.setItem("strict-habit-list", JSON.stringify(habits));
+        input.value = "";
+        render();
+    }
+}
+
+function removeHabit(index) {
+    if(confirm(`Remove "${habits[index]}"?`)) {
+        habits.splice(index, 1);
+        localStorage.setItem("strict-habit-list", JSON.stringify(habits));
+        render();
+    }
+}
+
+// Drag & Drop
+let dragStartIndex;
+function handleDragStart(e) { dragStartIndex = +e.target.closest('tr').dataset.index; e.target.closest('tr').classList.add('dragging'); }
+function handleDragOver(e) { e.preventDefault(); }
+function handleDrop(e) {
+    const tr = e.target.closest('tr');
+    if(!tr) return;
+    const dragEndIndex = +tr.dataset.index;
+    const temp = habits[dragStartIndex];
+    habits.splice(dragStartIndex, 1);
+    habits.splice(dragEndIndex, 0, temp);
+    localStorage.setItem("strict-habit-list", JSON.stringify(habits));
+    render();
+}
+
+function initWeeks() {
+    const selector = document.getElementById("weekSelector");
+    const year = new Date().getFullYear();
+    let d = new Date(year, 0, 1);
+    while(d.getDay() !== 1) d.setDate(d.getDate() + 1);
+    while(d.getFullYear() === year) {
+        let opt = document.createElement("option");
+        opt.value = d.toISOString();
+        let end = new Date(d); end.setDate(end.getDate() + 6);
+        opt.text = `${d.toDateString().slice(4,10)} - ${end.toDateString().slice(4,10)}`;
+        selector.appendChild(opt);
+        d.setDate(d.getDate() + 7);
+    }
+    const curMon = new Date(); curMon.setDate(curMon.getDate() - (curMon.getDay() === 0 ? 6 : curMon.getDay() - 1));
+    selector.value = curMon.toISOString();
+}
+
+function getVisibleWeekDates() {
+    const start = new Date(document.getElementById("weekSelector").value);
+    return Array.from({length: 7}, (_, i) => {
+        const d = new Date(start); d.setDate(d.getDate() + i); d.setHours(0,0,0,0);
+        return d;
+    });
+}
+
+function render() {
+    const tbody = document.getElementById("habit-body");
+    const dates = getVisibleWeekDates();
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    tbody.innerHTML = habits.map((h, hIdx) => {
+        let cells = dates.map((date) => {
+            const isToday = date.getTime() === today.getTime();
+            return `<td class="${isToday ? 'is-today' : 'locked-day'}">
+                <input type="checkbox" ${!isToday ? 'disabled' : ''} data-habit="${hIdx}" data-date="${date.toISOString()}">
+            </td>`;
+        }).join("");
+
+        return `<tr draggable="true" data-index="${hIdx}">
+            <td>
+                <div class="habit-name-cell">
+                    <span class="drag-handle">⠿</span>
+                    <strong>${h}</strong>
+                    <button class="remove-habit" onclick="removeHabit(${hIdx})">&times;</button>
+                </div>
+            </td>
+            ${cells}
+        </tr>`;
+    }).join("");
+
+    document.querySelectorAll('#habit-body tr').forEach(row => {
+        row.addEventListener('dragstart', handleDragStart);
+        row.addEventListener('dragover', handleDragOver);
+        row.addEventListener('drop', handleDrop);
+    });
+
+    loadData();
+}
+
+function loadData() {
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        const date = new Date(cb.dataset.date);
+        const saved = JSON.parse(localStorage.getItem(getKey(date))) || [];
+        cb.checked = !!saved[cb.dataset.habit];
+    });
+    updateStats();
+}
+
+function saveData() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dayData = habits.map((_, hIdx) => {
+        const cb = document.querySelector(`input[data-habit="${hIdx}"][data-date="${today.toISOString()}"]`);
+        return cb ? cb.checked : false;
+    });
+    localStorage.setItem(getKey(today), JSON.stringify(dayData));
+    updateStats();
+}
+
+function updateStats() {
+    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+    const weekChecked = cbs.filter(c => c.checked).length;
+    const weekP = cbs.length ? Math.round((weekChecked / cbs.length) * 100) : 0;
+    document.getElementById("weekPercent").innerText = weekP + "%";
+    document.getElementById("weekCircle").style.strokeDashoffset = CIRC - (weekP/100)*CIRC;
+
+    const now = new Date(); let yDone = 0, yTotal = 0;
+    for(let d = new Date(now.getFullYear(), 0, 1); d <= now; d.setDate(d.getDate() + 1)) {
+        const data = JSON.parse(localStorage.getItem(getKey(d)));
+        if(data) yDone += data.filter(v => v).length;
+        yTotal += habits.length;
+    }
+    const yearP = yTotal ? Math.round((yDone / yTotal) * 100) : 0;
+    document.getElementById("yearPercent").innerText = yearP + "%";
+    document.getElementById("yearCircle").style.strokeDashoffset = CIRC - (yearP/100)*CIRC;
+    calcStreaks(); drawHeatmap();
+}
+
+function calcStreaks() {
+    let best = 0, current = 0, temp = 0; const now = new Date(); now.setHours(0,0,0,0);
+    for(let d = new Date(now.getFullYear(), 0, 1); d <= now; d.setDate(d.getDate() + 1)) {
+        const data = JSON.parse(localStorage.getItem(getKey(d)));
+        if(data && data.length === habits.length && data.every(v => v)) { temp++; best = Math.max(best, temp); } else temp = 0;
+    }
+    let cd = new Date(now);
+    while(true) {
+        const data = JSON.parse(localStorage.getItem(getKey(cd)));
+        if(data && data.length === habits.length && data.every(v => v)) { current++; cd.setDate(cd.getDate()-1); } else break;
+    }
+    document.getElementById("currentStreak").innerText = current;
+    document.getElementById("bestStreak").innerText = best;
+}
+
+function drawHeatmap() {
+    const container = document.getElementById("yearHeatmap"); container.innerHTML = "";
+    const today = new Date(); today.setHours(0,0,0,0);
+    const year = today.getFullYear(); let d = new Date(year, 0, 1);
+    while(d.getDay() !== 1) d.setDate(d.getDate() - 1);
+
+    for(let w = 0; w < 53; w++) {
+        const col = document.createElement("div"); col.className = "week-column";
+        for(let day = 0; day < 7; day++) {
+            const sq = document.createElement("div"); sq.className = "day-square";
+            if(d.getFullYear() === year) {
+                const data = JSON.parse(localStorage.getItem(getKey(d))) || [];
+                const count = data.filter(v => v).length;
+                if (d < today && count === 0) sq.classList.add("failed-day");
+                sq.setAttribute("data-title", `${d.toDateString()}: ${count}/${habits.length}`);
+                if(count > 0 && habits.length > 0) {
+                    const r = count / habits.length;
+                    sq.classList.add(r <= 0.3 ? "level-1" : r <= 0.6 ? "level-2" : r < 1 ? "level-3" : "level-4");
+                }
+            }
+            col.appendChild(sq); d.setDate(d.getDate() + 1);
+        }
+        container.appendChild(col);
+    }
+}
+
+function exportToCSV() {
+    const year = new Date().getFullYear();
+    let csvRows = [];
+    
+    // Header Row
+    const headers = ["Date", ...habits, "Completed Count", "Success %"];
+    csvRows.push(headers.join(","));
+
+    // Iterate through every day of the year up to today
+    const today = new Date();
+    for (let d = new Date(year, 0, 1); d <= today; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        const data = JSON.parse(localStorage.getItem(getKey(d))) || [];
+        
+        const row = [dateStr];
+        let completed = 0;
+        
+        habits.forEach((_, hIdx) => {
+            const val = data[hIdx] ? "Yes" : "No";
+            if (data[hIdx]) completed++;
+            row.push(val);
+        });
+
+        const percent = habits.length ? Math.round((completed / habits.length) * 100) : 0;
+        row.push(completed, percent + "%");
+        csvRows.push(row.join(","));
+    }
+
+    const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `HabitTracker_Export_${year}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+document.getElementById("weekSelector").onchange = render;
+document.getElementById("habit-body").onclick = (e) => {
+    const td = e.target.closest("td");
+    if(td && !td.classList.contains('locked-day')) {
+        const cb = td.querySelector("input");
+        if(cb && !cb.disabled) { if(e.target !== cb) cb.checked = !cb.checked; saveData(); }
+    }
+};
+
+initWeeks();
+render();
+</script>
+</body>
+</html>
